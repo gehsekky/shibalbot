@@ -1,4 +1,5 @@
-'''
+# encoding: utf-8
+"""
 ShibalBot
 
 Created on Sep 14, 2011
@@ -6,10 +7,16 @@ Created on Sep 14, 2011
 taken from example at:
 http://www.eflorenzano.com/blog/post/writing-markov-chain-irc-bot-twisted-and-python/
 
-@author: andy
-'''
+htmlparser example from:
+http://stackoverflow.com/questions/3276040/how-can-i-use-the-python-htmlparser-library-to-extract-data-from-a-specific-div-t
 
+@author: andy
+"""
+
+import re
+import urllib2
 import random
+from HTMLParser import HTMLParser
 from twisted.internet import reactor
 from twisted.words.protocols import irc
 from twisted.internet import protocol
@@ -65,7 +72,6 @@ class ShibalBot(irc.IRCClient):
                         msg = "invalid number of command arguments"
                         self.msg(channel, msg)
                         print msg
-                        # error
                     else:
                         # get command
                         if command_parts[1] == "add":
@@ -73,6 +79,7 @@ class ShibalBot(irc.IRCClient):
                             line_to_add = command_parts[2]
                             if not line_to_add.endswith("\n"):
                                 line_to_add = line_to_add + "\n"
+                            # write quote to file
                             with open(filename, "a") as quotefile:
                                 quotefile.write(line_to_add)
                             msg = "quote added."
@@ -86,13 +93,17 @@ class ShibalBot(irc.IRCClient):
                                 msg = "command argument must be valid integer"
                                 self.msg(channel, msg)
                                 print msg
-                                
+                            # check if argument is negative
                             if line_num > -1:
                                 lines = None
+                                # get all quotes
                                 with open(filename, "r") as quotefile:
                                     lines = quotefile.readlines()
+                                # check if input is within bounds
                                 if line_num < len(lines):
+                                    # remove quote from list
                                     lines.pop(line_num)
+                                    # replace file contents with updated list
                                     with open(filename, "w") as quotefile:
                                         for line in lines:
                                             quotefile.write(line)
@@ -115,12 +126,15 @@ class ShibalBot(irc.IRCClient):
                                 msg = "command argument must be valid integer"
                                 self.msg(channel, msg)
                                 print msg
-                                
+                            # check if input is negative
                             if line_num > -1:
                                 lines = None
+                                # get all quotes
                                 with open(filename, "r") as quotefile:
                                     lines = quotefile.readlines()
+                                # check if input is within bounds
                                 if line_num < len(lines):
+                                    # send desired quote as message
                                     msg = "[" + str(line_num) + "] " + lines[line_num]
                                     self.msg(channel, msg)
                                     print msg
@@ -134,10 +148,13 @@ class ShibalBot(irc.IRCClient):
                                 print msg
                         elif command_parts[1] == "search":
                                 lines = None
+                                # get all quotes
                                 with open(filename, "r") as quotefile:
                                     lines = quotefile.readlines()
+                                # filter quotes
                                 results = ["[" + str(lines.index(line)) + "] " + line for line in lines if command_parts[2] in line > -1]
                                 if len(results) > 0:
+                                    # send each found result as message
                                     for result in results[:3]:
                                         msg = result
                                         self.msg(channel, msg)
@@ -147,20 +164,41 @@ class ShibalBot(irc.IRCClient):
                                     self.msg(channel, msg)
                                     print msg
                         else:
-                            #error
+                            # encountered unknown command
                             msg = "invalid command argument."
                             self.msg(channel, msg)
                             print(msg)
-                        
+
+        if self.factory.linkfetcher_enabled:
+            if (user != self.factory.nickname):
+                match = re.search(r'(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))', msg)
+                if match:
+                    url = match.group(0)
+                    try:
+                        req = urllib2.Request(url)
+                        rsp = urllib2.urlopen(req)
+                        pagecontent = rsp.read()
+                    except:
+                        pagecontent = ''
+                        print 'fetching url failed: %s' % (url)
+                    if pagecontent != '':
+                        parser = ShibalHTMLParser()
+                        parser.feed(pagecontent)
+                        parser.close()
+                        msg = parser.titlecontents
+                        self.msg(channel, msg)
+                        print msg
+
 
 class ShibalBotFactory(protocol.ClientFactory):
+    """Factory for our bot"""
     protocol = ShibalBot
 
-    def __init__(self, channel, nickname="ShibalBot", quotes=False, linkannouncer=False):
+    def __init__(self, channel, nickname="ShibalBot", quotes=False, linkfetcher=False):
         self.channel = channel
         self.nickname = nickname
         self.quotes_enabled = quotes
-        self.linkfetcher_enabled = linkannouncer
+        self.linkfetcher_enabled = linkfetcher
 
     def clientConnectionLost(self, connector, reason):
         print "Lost connection (%s), reconnecting." % (reason,)
@@ -169,6 +207,27 @@ class ShibalBotFactory(protocol.ClientFactory):
     def clientConnectionFailed(self, connector, reason):
         print "Could not connect: %s" % (reason,)
 
+class ShibalHTMLParser(HTMLParser):
+    """Internal HTMLParser"""
+    def reset(self):
+        HTMLParser.reset(self)
+        self.titlecontents = ''
+        self.recording = 0
+        
+    def handle_starttag(self, tag, attrs):
+        if tag == 'title':
+            self.recording = 1
+    
+    def handle_endtag(self, tag):
+        if tag == 'title' and self.recording == 1:
+            self.recording = 0
+            
+    def handle_data(self, data):
+        if self.recording == 1:
+            self.titlecontents = data
+
+
 if __name__ == "__main__":
-    reactor.connectTCP("YOUR_IRC_SERVER_HOST", IRC_SERVER_HOST_PORT, ShibalBotFactory("YOUR_IRC_CHANNEL", "YOUR_IRCBOT_NICK", True, False))
+    #chan = sys.argv[1]
+    reactor.connectTCP("YOUR_IRC_SERVER_HOST", IRC_SERVER_HOST_PORT, ShibalBotFactory("YOUR_IRC_CHANNEL", "YOUR_IRCBOT_NICK", True, True))
     reactor.run()
