@@ -25,5 +25,7 @@ Make a file in the same folder containing the shibalbot.py script called "shibal
     [commands]
     prefix: !
 
+Then just run "python shibalbot.py" in the same directory that contains the file and you should be up and running.
+
 ###TODO
 * make a plugin system (nothing complicated, just a way to add more functions without hardcoding a bunch of stuff)
